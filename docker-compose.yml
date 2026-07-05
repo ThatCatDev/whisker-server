@@ -1,0 +1,15 @@
+# Local Postgres for development. The server also runs without it
+# (in-memory store) — this is for testing the persistence path.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: whisker
+      POSTGRES_PASSWORD: whisker
+      POSTGRES_DB: whisker
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
