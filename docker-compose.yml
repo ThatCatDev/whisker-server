@@ -1,5 +1,16 @@
-# Local Postgres for development. The server also runs without it
-# (in-memory store) — this is for testing the persistence path.
+# Full local stack: Postgres + Supabase Auth (GoTrue) + whisker-server.
+#
+#   docker compose up -d
+#
+# Auth API on :9999, sync/boards API on :8787, Postgres on :5432.
+# One JWT secret is shared between Supabase Auth (signs) and whisker-server
+# (verifies) — override JWT_SECRET for anything beyond local development.
+#
+# Moving to hosted Supabase later = drop the `auth` service and point
+# SUPABASE_JWT_SECRET at your project's JWT secret.
+
+x-jwt-secret: &jwt-secret ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -11,5 +22,51 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisker -d whisker"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Supabase Auth. This single service IS "Supabase for auth" — the rest of
+  # the platform (Kong, Studio, PostgREST, ...) is not needed here.
+  auth:
+    image: supabase/auth:v2.192.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://localhost:9999
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://whisker:whisker@postgres:5432/whisker?search_path=auth
+      GOTRUE_SITE_URL: http://localhost:5174
+      GOTRUE_URI_ALLOW_LIST: http://localhost:5174,http://127.0.0.1:5174
+      GOTRUE_JWT_SECRET: *jwt-secret
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      # Email/password sign-ups confirmed immediately — no SMTP needed for
+      # local development. Wire GOTRUE_SMTP_* for real email flows.
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_DISABLE_SIGNUP: "false"
+    ports:
+      - "9999:9999"
+
+  server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADDR: ":8787"
+      DATABASE_URL: postgres://whisker:whisker@postgres:5432/whisker
+      SUPABASE_JWT_SECRET: *jwt-secret
+    ports:
+      - "8787:8787"
+
 volumes:
   pgdata:

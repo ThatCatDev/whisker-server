@@ -14,23 +14,53 @@ Sync and boards backend for [Whisker](../whisker). One Go binary, three jobs:
 
 ## Run it
 
-Development (no database, no auth):
+Quickest (no database, no auth):
 
 ```sh
 AUTH_DISABLED=1 go run .
 ```
 
-With Postgres and real auth:
+Full local stack — Postgres + Supabase Auth + this server, all in Docker:
 
 ```sh
-docker compose up -d postgres
-DATABASE_URL=postgres://whisker:whisker@localhost:5432/whisker \
-SUPABASE_JWT_SECRET=<Project Settings → API → JWT Secret> \
-go run .
+docker compose up -d --build
 ```
 
+| Service       | Port  | Notes                                          |
+| ------------- | ----- | ---------------------------------------------- |
+| Supabase Auth | :9999 | GoTrue; email+password with autoconfirm        |
+| whisker-server| :8787 | sync websocket + boards API, real JWT auth     |
+| Postgres      | :5432 | one database, `auth` schema + whisker tables   |
+
 The schema (`internal/store/schema.sql`) is applied automatically on boot.
-`DATABASE_URL` can point at the Postgres bundled with your Supabase project.
+Against hosted Supabase instead: drop the `auth` service, point
+`DATABASE_URL` wherever you like, and set `SUPABASE_JWT_SECRET` to the
+project's JWT secret.
+
+### Auth flow (local stack)
+
+```sh
+# Sign up (autoconfirmed, returns a session immediately)
+curl -X POST localhost:9999/signup -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"correct-horse"}'
+
+# Log in → access_token
+curl -X POST 'localhost:9999/token?grant_type=password' -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"correct-horse"}'
+
+# Use it
+curl localhost:8787/api/boards -H "Authorization: Bearer $TOKEN"
+```
+
+On the client, point Whisker at the stack (until the login UI lands):
+
+```js
+localStorage.setItem('whisker-sync-url', 'ws://localhost:8787/sync')
+localStorage.setItem('whisker-sync-token', '<access_token>')
+```
+
+Note the board ACL is enforced on /sync: the board id must exist in
+`/api/boards` and belong to (or be shared with) the token's user.
 
 ## Configuration
 
