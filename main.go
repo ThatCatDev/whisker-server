@@ -23,6 +23,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/coder/websocket"
 
@@ -39,12 +40,22 @@ func main() {
 	authDisabled := os.Getenv("AUTH_DISABLED") == "1"
 	openBoards := os.Getenv("OPEN_BOARDS") == "1" || authDisabled
 	jwtSecret := os.Getenv("SUPABASE_JWT_SECRET")
+	// Projects on Supabase's asymmetric "JWT signing keys" publish a JWKS;
+	// derive its URL from the auth proxy target unless set explicitly.
+	jwksURL := os.Getenv("SUPABASE_JWKS_URL")
+	if jwksURL == "" && jwtSecret == "" {
+		if authURL := os.Getenv("AUTH_PROXY_URL"); authURL != "" {
+			jwksURL = strings.TrimRight(authURL, "/") + "/.well-known/jwks.json"
+		}
+	}
 
 	if authDisabled {
 		log.Warn("AUTH_DISABLED=1 — every request runs as 'dev-user'")
-	} else if jwtSecret == "" {
-		log.Error("SUPABASE_JWT_SECRET is required unless AUTH_DISABLED=1")
+	} else if jwtSecret == "" && jwksURL == "" {
+		log.Error("SUPABASE_JWT_SECRET or SUPABASE_JWKS_URL is required unless AUTH_DISABLED=1")
 		os.Exit(1)
+	} else if jwksURL != "" {
+		log.Info("jwt verification", "jwks", jwksURL)
 	}
 
 	var st store.Store
@@ -62,7 +73,7 @@ func main() {
 	}
 	defer st.Close()
 
-	verifier := auth.New(jwtSecret, authDisabled)
+	verifier := auth.New(jwtSecret, jwksURL, authDisabled)
 	h := hub.New(st, log)
 
 	mux := http.NewServeMux()
@@ -87,13 +98,12 @@ func main() {
 		proxy.Director = func(r *http.Request) {
 			baseDirector(r)
 			// Hosted Supabase sits behind a CDN that routes on Host and
-			// rejects requests without the project's api key.
+			// rejects requests without the project's api key. Publishable
+			// keys (sb_publishable_…) go in the apikey header ONLY — they
+			// are not JWTs and must never appear as a Bearer token.
 			r.Host = target.Host
 			if apikey != "" {
 				r.Header.Set("apikey", apikey)
-				if r.Header.Get("Authorization") == "" {
-					r.Header.Set("Authorization", "Bearer "+apikey)
-				}
 			}
 		}
 		proxy.ModifyResponse = func(resp *http.Response) error {
