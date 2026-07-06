@@ -52,12 +52,10 @@ curl -X POST 'localhost:9999/token?grant_type=password' -H 'Content-Type: applic
 curl localhost:8787/api/boards -H "Authorization: Bearer $TOKEN"
 ```
 
-On the client, point Whisker at the stack (until the login UI lands):
-
-```js
-localStorage.setItem('whisker-sync-url', 'ws://localhost:8787/sync')
-localStorage.setItem('whisker-sync-token', '<access_token>')
-```
+The Whisker client has a built-in login: Dashboard → "Use a server…" →
+enter this server's URL. Signup/signin, board registry and sync tokens are
+handled from there (the auth API is reverse-proxied under /auth so ONE URL
+configures everything).
 
 Note the board ACL is enforced on /sync: the board id must exist in
 `/api/boards` and belong to (or be shared with) the token's user.

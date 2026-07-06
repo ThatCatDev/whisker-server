@@ -20,6 +20,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"github.com/coder/websocket"
@@ -68,6 +70,27 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
+	// Reverse-proxy the auth API under /auth/ so clients need exactly ONE
+	// backend URL. Point AUTH_PROXY_URL at GoTrue (compose: http://auth:9999).
+	if authURL := os.Getenv("AUTH_PROXY_URL"); authURL != "" {
+		target, err := url.Parse(authURL)
+		if err != nil {
+			log.Error("AUTH_PROXY_URL", "err", err)
+			os.Exit(1)
+		}
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			// Our CORS middleware already sets these; doubled headers make
+			// browsers reject the response.
+			resp.Header.Del("Access-Control-Allow-Origin")
+			resp.Header.Del("Access-Control-Allow-Headers")
+			resp.Header.Del("Access-Control-Allow-Methods")
+			return nil
+		}
+		mux.Handle("/auth/", http.StripPrefix("/auth", proxy))
+		log.Info("auth proxy", "target", authURL)
+	}
 	mux.HandleFunc("GET /sync/{board}", func(w http.ResponseWriter, r *http.Request) {
 		boardID := r.PathValue("board")
 		userID, err := verifier.UserID(r)
@@ -111,8 +134,14 @@ func cors(next http.Handler) http.Handler {
 	origin := envOr("CORS_ORIGIN", "*")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		// Reflect whatever the browser asks for — auth clients send extra
+		// headers (x-client-info, apikey) beyond the obvious two.
+		if req := r.Header.Get("Access-Control-Request-Headers"); req != "" {
+			w.Header().Set("Access-Control-Allow-Headers", req)
+		} else {
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
