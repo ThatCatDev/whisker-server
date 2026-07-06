@@ -1,3 +1,4 @@
 whisker-server
 *.test
 .env
+node_modules/
