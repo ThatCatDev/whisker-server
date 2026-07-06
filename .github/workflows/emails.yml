@@ -1,0 +1,27 @@
+# Keep Supabase auth email templates in sync with the repo: any change
+# under supabase/emails/ is pushed to the project via the Management API.
+#
+# Secret: SUPABASE_ACCESS_TOKEN — a personal access token from
+# https://supabase.com/dashboard/account/tokens
+name: Sync email templates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/emails/**"
+      - "scripts/push-email-templates.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/push-email-templates.py
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: tofxluhjxeaorulptceu

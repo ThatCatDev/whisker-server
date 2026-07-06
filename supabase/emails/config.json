@@ -1,0 +1,10 @@
+{
+  "site_url": "https://whisker.kaimu.app",
+  "subjects": {
+    "confirmation": "Confirm your Whisker account 🐈",
+    "recovery": "Reset your Whisker password",
+    "magic_link": "Your Whisker sign-in link",
+    "invite": "You've been invited to Whisker",
+    "email_change": "Confirm your new Whisker email"
+  }
+}
