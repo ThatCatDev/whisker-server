@@ -72,7 +72,9 @@ func main() {
 	})
 
 	// Reverse-proxy the auth API under /auth/ so clients need exactly ONE
-	// backend URL. Point AUTH_PROXY_URL at GoTrue (compose: http://auth:9999).
+	// backend URL. Point AUTH_PROXY_URL at GoTrue — the compose stack's
+	// http://auth:9999, or hosted Supabase's https://<ref>.supabase.co/auth/v1
+	// (set AUTH_PROXY_APIKEY to the project's anon key for the latter).
 	if authURL := os.Getenv("AUTH_PROXY_URL"); authURL != "" {
 		target, err := url.Parse(authURL)
 		if err != nil {
@@ -80,6 +82,20 @@ func main() {
 			os.Exit(1)
 		}
 		proxy := httputil.NewSingleHostReverseProxy(target)
+		apikey := os.Getenv("AUTH_PROXY_APIKEY")
+		baseDirector := proxy.Director
+		proxy.Director = func(r *http.Request) {
+			baseDirector(r)
+			// Hosted Supabase sits behind a CDN that routes on Host and
+			// rejects requests without the project's api key.
+			r.Host = target.Host
+			if apikey != "" {
+				r.Header.Set("apikey", apikey)
+				if r.Header.Get("Authorization") == "" {
+					r.Header.Set("Authorization", "Bearer "+apikey)
+				}
+			}
+		}
 		proxy.ModifyResponse = func(resp *http.Response) error {
 			// Our CORS middleware already sets these; doubled headers make
 			// browsers reject the response.
