@@ -10,6 +10,7 @@ Env: SUPABASE_ACCESS_TOKEN (sbp_..., account personal access token)
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 EMAILS_DIR = os.path.join(os.path.dirname(__file__), "..", "supabase", "emails")
