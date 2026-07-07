@@ -45,6 +45,9 @@ def main() -> int:
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+            # api.supabase.com sits behind Cloudflare, which blocks
+            # python-urllib's default UA (403, error code 1010).
+            "User-Agent": "whisker-email-sync/1.0",
         },
         method="PATCH",
     )
